@@ -1,0 +1,10 @@
+import sqlite3
+conn = sqlite3.connect("o2c.db")
+cur = conn.cursor()
+cur.execute("SELECT name FROM sqlite_master WHERE type='view'")
+views = cur.fetchall()
+print("Views found:", views)
+cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+tables = cur.fetchall()
+print("Tables found:", len(tables))
+conn.close()
