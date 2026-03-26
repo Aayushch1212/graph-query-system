@@ -373,7 +373,7 @@ async def call_gemini(system: str, messages: list, api_key: str) -> str:
 async def call_groq(system: str, messages: list, api_key: str) -> str:
     import httpx
     msgs = [{"role": "system", "content": system}] + messages
-    payload = {"model": "llama3-70b-8192", "messages": msgs, "temperature": 0.1, "max_tokens": 2000}
+    payload = {"model": "llama3-3.1-70b-versatile", "messages": msgs, "temperature": 0.1, "max_tokens": 2000}
     async with httpx.AsyncClient(timeout=40) as client:
         r = await client.post(
             "https://api.groq.com/openai/v1/chat/completions",
