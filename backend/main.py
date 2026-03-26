@@ -17,12 +17,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
-        allow_credentials=True,
-
+    allow_credentials=True,
     allow_headers=["*"],
 )
 
-# DB_PATH = os.path.join(os.path.dirname(__file__), "../data/business.db")
 DB_PATH = os.path.join(os.path.dirname(__file__), "o2c.db")
 
 
@@ -66,7 +64,7 @@ def first_rows(conn, table: str, n: int = 2) -> list:
         return []
 
 
-# ── Schema introspection (used for LLM prompt + graph) ───────────────────────
+# ── Schema introspection ──────────────────────────────────────────────────────
 
 def get_full_schema() -> str:
     conn = get_db()
@@ -77,7 +75,6 @@ def get_full_schema() -> str:
     for obj in objects:
         cur.execute(f"PRAGMA table_info({obj})")
         cols = [f"{r[1]}({r[2] or 'TEXT'})" for r in cur.fetchall()]
-        # Add row count for tables
         try:
             cur.execute(f"SELECT COUNT(*) FROM {obj}")
             cnt = cur.fetchone()[0]
@@ -102,11 +99,9 @@ def get_graph():
             seen_nodes.add(nid)
             nodes.append({"id": nid, "label": str(label)[:30], "type": ntype, "properties": props or {}})
 
-    # Customers
     for r in conn.execute("SELECT businesspartner, businesspartnerfullname FROM business_partners LIMIT 40").fetchall():
         add_node(f"bp_{r[0]}", r[1] or f"BP-{r[0]}", "Customer", {"id": r[0]})
 
-    # Sales Orders + Customer->Order edges
     for r in conn.execute("SELECT salesorder, soldtoparty, totalnetamount FROM sales_order_headers LIMIT 80").fetchall():
         so, cust, val = r[0], r[1], r[2]
         add_node(f"so_{so}", f"SO-{so}", "SalesOrder", {"order_id": so, "value": val})
@@ -114,12 +109,10 @@ def get_graph():
             add_node(f"bp_{cust}", f"Customer {cust}", "Customer", {"id": cust})
             edges.append({"source": f"bp_{cust}", "target": f"so_{so}", "label": "PLACED"})
 
-    # Deliveries � no direct SO link in outbound_delivery_headers, link via items
     for r in conn.execute("SELECT deliverydocument FROM outbound_delivery_headers LIMIT 80").fetchall():
         did = r[0]
         add_node(f"del_{did}", f"DEL-{did}", "Delivery", {"delivery_id": did})
 
-    # Sales order items -> link SO to delivery via delivery items
     if conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='outbound_delivery_items'").fetchone():
         cols = [r[1] for r in conn.execute("PRAGMA table_info(outbound_delivery_items)").fetchall()]
         so_c = next((c for c in cols if 'salesorder' in c.lower()), None)
@@ -135,12 +128,10 @@ def get_graph():
                         seen_nodes.add(ek)
                         edges.append({"source": f"so_{so_id}", "target": f"del_{del_id}", "label": "DELIVERED_VIA"})
 
-    # Billing docs + link to customer (soldtoparty)
     for r in conn.execute("SELECT billingdocument, soldtoparty, totalnetamount FROM billing_document_headers LIMIT 80").fetchall():
         bid, cust, val = r[0], r[1], r[2]
         add_node(f"inv_{bid}", f"BILL-{bid}", "Invoice", {"billing_doc_id": bid, "value": val})
 
-    # Link billing -> delivery via billing items (referencesddocument = delivery)
     if conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='billing_document_items'").fetchone():
         for r in conn.execute("SELECT billingdocument, referencesddocument FROM billing_document_items LIMIT 200").fetchall():
             bill_id, ref_doc = r[0], r[1]
@@ -152,7 +143,6 @@ def get_graph():
                     seen_nodes.add(ek)
                     edges.append({"source": f"del_{ref_doc}", "target": f"inv_{bill_id}", "label": "INVOICED"})
 
-    # Payments via journal_entry_items_ar (accountingdocument links to billing_document_headers)
     for r in conn.execute("""
         SELECT j.accountingdocument, j.companycode, j.fiscalyear, b.billingdocument
         FROM journal_entry_items_ar j
@@ -168,12 +158,10 @@ def get_graph():
             seen_nodes.add(ek)
             edges.append({"source": f"inv_{bill_id}", "target": f"je_{je_id}", "label": "JOURNALIZED"})
 
-    # Products
     for r in conn.execute("SELECT product FROM products LIMIT 40").fetchall():
         pid = r[0]
         add_node(f"prod_{pid}", f"PROD-{pid}", "Product", {"product_id": pid})
 
-    # SO items -> Products
     for r in conn.execute("SELECT salesorder, material FROM sales_order_items LIMIT 120").fetchall():
         so_id, prod_id = r[0], r[1]
         if so_id and prod_id:
@@ -193,14 +181,14 @@ def get_stats():
     conn = get_db()
     cur = conn.cursor()
     tables = {
-    "business_partners":        "customers",
-    "sales_order_headers":      "sales_orders",
-    "outbound_delivery_headers":"deliveries",
-    "billing_document_headers": "invoices",
-    "payments_ar":              "payments",
-    "products":                 "products",
-    "sales_order_items":        "order_items",
-    "journal_entry_items_ar":   "journal_entries",
+        "business_partners":        "customers",
+        "sales_order_headers":      "sales_orders",
+        "outbound_delivery_headers":"deliveries",
+        "billing_document_headers": "invoices",
+        "payments_ar":              "payments",
+        "products":                 "products",
+        "sales_order_items":        "order_items",
+        "journal_entry_items_ar":   "journal_entries",
     }
     stats = {}
     for tbl, label in tables.items():
@@ -213,7 +201,7 @@ def get_stats():
     return stats
 
 
-# ── Node detail ────────────────────────────────────────────────────────────────
+# ── Node detail ───────────────────────────────────────────────────────────────
 
 @app.get("/api/node/{node_id}")
 def get_node_detail(node_id: str):
@@ -246,7 +234,7 @@ def get_node_detail(node_id: str):
     return dict(row)
 
 
-# ── Chat / NL query ────────────────────────────────────────────────────────────
+# ── Chat / NL query ───────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT_TEMPLATE = """You are a SQL data analyst for a SAP Order-to-Cash (O2C) business database.
 
@@ -272,7 +260,7 @@ HELPER VIEWS (pre-built for common queries):
 RULES:
 1. If the question is NOT about this dataset (general knowledge, coding, creative writing, weather, etc.), respond EXACTLY with:
    "This system is designed to answer questions related to the provided dataset only."
-   
+
 2. For valid data questions: write a SQLite SQL query inside <SQL>...</SQL> tags, then give a clear natural language answer.
 
 3. Use the helper views (v_o2c_flow, v_broken_flows, v_product_billing_counts) when relevant — they are already optimised.
@@ -308,18 +296,22 @@ async def chat(req: ChatRequest):
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": req.message})
 
-    # Try LLM providers in order
     llm_text = ""
-    if os.environ.get("GEMINI_API_KEY"):
-        llm_text = await call_gemini(system, messages, os.environ["GEMINI_API_KEY"])
-    elif os.environ.get("GROQ_API_KEY"):
-        llm_text = await call_groq(system, messages, os.environ["GROQ_API_KEY"])
-    elif os.environ.get("OPENROUTER_API_KEY"):
-        llm_text = await call_openrouter(system, messages, os.environ["OPENROUTER_API_KEY"])
-    else:
+    error_info = ""
+
+    try:
+        if os.environ.get("GEMINI_API_KEY"):
+            llm_text = await call_gemini(system, messages, os.environ["GEMINI_API_KEY"])
+        elif os.environ.get("GROQ_API_KEY"):
+            llm_text = await call_groq(system, messages, os.environ["GROQ_API_KEY"])
+        elif os.environ.get("OPENROUTER_API_KEY"):
+            llm_text = await call_openrouter(system, messages, os.environ["OPENROUTER_API_KEY"])
+        else:
+            llm_text = rule_based_fallback(req.message)
+    except Exception as e:
+        error_info = str(e)
         llm_text = rule_based_fallback(req.message)
 
-    # Extract <SQL>...</SQL> and execute
     sql_result = None
     display_text = llm_text
 
@@ -329,8 +321,12 @@ async def chat(req: ChatRequest):
         sql_result = execute_sql(sql)
         display_text = llm_text[:sql_match.start()] + llm_text[sql_match.end():]
 
+    response = display_text.strip()
+    if error_info:
+        response += f"\n\n⚠️ LLM error (used rule-based fallback): {error_info}"
+
     return {
-        "response": display_text.strip(),
+        "response": response,
         "sql_result": sql_result,
     }
 
@@ -369,6 +365,8 @@ async def call_gemini(system: str, messages: list, api_key: str) -> str:
     async with httpx.AsyncClient(timeout=40) as client:
         r = await client.post(url, json=payload)
         data = r.json()
+        if "candidates" not in data:
+            raise Exception(f"Gemini: {data.get('error', {}).get('message', str(data))}")
         return data["candidates"][0]["content"]["parts"][0]["text"]
 
 
@@ -382,7 +380,10 @@ async def call_groq(system: str, messages: list, api_key: str) -> str:
             json=payload,
             headers={"Authorization": f"Bearer {api_key}"},
         )
-        return r.json()["choices"][0]["message"]["content"]
+        data = r.json()
+        if "choices" not in data:
+            raise Exception(f"Groq: {data.get('error', {}).get('message', str(data))}")
+        return data["choices"][0]["message"]["content"]
 
 
 async def call_openrouter(system: str, messages: list, api_key: str) -> str:
@@ -402,7 +403,10 @@ async def call_openrouter(system: str, messages: list, api_key: str) -> str:
                 "HTTP-Referer": "http://localhost:3000",
             },
         )
-        return r.json()["choices"][0]["message"]["content"]
+        data = r.json()
+        if "choices" not in data:
+            raise Exception(f"OpenRouter: {data.get('error', {}).get('message', str(data))}")
+        return data["choices"][0]["message"]["content"]
 
 
 # ── Rule-based fallback (no LLM key) ─────────────────────────────────────────
@@ -452,6 +456,5 @@ def rule_based_fallback(message: str) -> str:
         sql = "SELECT * FROM outbound_delivery_headers LIMIT 15"
         return f"<SQL>{sql}</SQL>\nHere are the outbound deliveries."
 
-    # Default: show the O2C flow
     sql = "SELECT * FROM v_o2c_flow LIMIT 10"
     return f"<SQL>{sql}</SQL>\nHere's an overview of the Order-to-Cash flow. You can ask about specific orders, deliveries, billing documents, or payments."
